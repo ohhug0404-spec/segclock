@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+
+<!-- 🔐 CSP (보안 핵심) -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'">
+
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<title>7SEG TIMER</title>
+
+<style>
+body { background:black; color:white; text-align:center; font-family:Arial; }
+
+.tabs { display:flex; justify-content:center; margin:20px; }
+.tab { padding:10px 20px; cursor:pointer; background:#222; margin:5px; }
+.active { background:black; }
+
+.screen { display:none; }
+.screen.active { display:block; }
+
+.display { display:flex; justify-content:center; align-items:center; gap:10px; }
+
+.digit { position:relative; width:50px; height:90px; }
+
+.segment { position:absolute; background:#220000; }
+.on { background:red; box-shadow:0 0 10px red; }
+
+.a { top:0; left:8px; width:34px; height:6px; }
+.b { top:4px; right:0; width:6px; height:34px; }
+.c { bottom:4px; right:0; width:6px; height:34px; }
+.d { bottom:0; left:8px; width:34px; height:6px; }
+.e { bottom:4px; left:0; width:6px; height:34px; }
+.f { top:4px; left:0; width:6px; height:34px; }
+.g { top:42px; left:8px; width:34px; height:6px; }
+
+.colon { display:flex; flex-direction:column; gap:12px; }
+.dot { width:8px; height:8px; background:red; box-shadow:0 0 10px red; }
+
+.controls { margin-top:20px; }
+
+/* 버튼 */
+.controls button {
+    background:#111;
+    color:#ff3b3b;
+    border:1px solid #550000;
+    padding:10px 20px;
+    margin:5px;
+    border-radius:8px;
+    cursor:pointer;
+    box-shadow:0 0 5px red;
+}
+.controls button:hover { box-shadow:0 0 15px red; }
+
+/* 입력 */
+.controls input {
+    background:#111;
+    color:#ff3b3b;
+    border:1px solid #550000;
+    width:60px;
+    text-align:center;
+}
+
+/* 현재시간 */
+.clockWrap { display:flex; justify-content:center; }
+.ms { color:cyan; margin-left:10px; }
+
+.msg {
+    color:yellow;
+    margin-top:10px;
+    height:20px;
+}
+</style>
+</head>
+
+<body>
+
+<div class="tabs">
+    <div class="tab active" onclick="switchTab(0)">타이머</div>
+    <div class="tab" onclick="switchTab(1)">스톱워치</div>
+    <div class="tab" onclick="switchTab(2)">현재시간</div>
+</div>
+
+<!-- 타이머 -->
+<div class="screen active">
+    <div class="display" id="timerDisplay"></div>
+    <div class="controls">
+        <input id="t_h" type="number" min="0" max="99" maxlength="2" placeholder="시">
+        <input id="t_m" type="number" min="0" max="59" maxlength="2" placeholder="분">
+        <input id="t_s" type="number" min="0" max="59" maxlength="2" placeholder="초"><br>
+        <button onclick="startTimer()">시작</button>
+        <button onclick="stopTimer()">정지</button>
+        <button onclick="resetTimer()">리셋</button>
+    </div>
+    <div class="msg" id="msg"></div>
+</div>
+
+<!-- 스톱워치 -->
+<div class="screen">
+    <div class="display" id="swDisplay"></div>
+    <div class="controls">
+        <button onclick="startSW()">시작</button>
+        <button onclick="stopSW()">정지</button>
+        <button onclick="resetSW()">리셋</button>
+    </div>
+</div>
+
+<!-- 현재시간 -->
+<div class="screen">
+    <div class="clockWrap">
+        <div>
+            <div style="display:flex; align-items:center;">
+                <div class="display" id="clockDisplay"></div>
+                <div class="ms" id="ms">000</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+
+/* 안전 숫자 변환 */
+function safeNum(val, min, max){
+    let n = parseInt(val);
+    if(isNaN(n)) return 0;
+    return Math.max(min, Math.min(max, n));
+}
+
+/* 메시지 */
+function showMsg(text){
+    document.getElementById("msg").textContent = text;
+}
+
+/* 7세그 구조 */
+const map = {
+0:["a","b","c","d","e","f"],1:["b","c"],
+2:["a","b","g","e","d"],3:["a","b","g","c","d"],
+4:["f","g","b","c"],5:["a","f","g","c","d"],
+6:["a","f","g","c","d","e"],7:["a","b","c"],
+8:["a","b","c","d","e","f","g"],
+9:["a","b","c","d","f","g"]
+};
+
+function digit(){
+    let d=document.createElement("div");
+    d.className="digit";
+    ["a","b","c","d","e","f","g"].forEach(s=>{
+        let el=document.createElement("div");
+        el.className="segment "+s;
+        d.appendChild(el);
+    });
+    return d;
+}
+
+function colon(){
+    let c=document.createElement("div");
+    c.className="colon";
+    let d1=document.createElement("div");
+    let d2=document.createElement("div");
+    d1.className="dot"; d2.className="dot";
+    c.appendChild(d1); c.appendChild(d2);
+    return c;
+}
+
+function set(d,n){
+    d.querySelectorAll(".segment").forEach(s=>s.classList.remove("on"));
+    map[n].forEach(s=>d.querySelector("."+s).classList.add("on"));
+}
+
+function buildDisplay(container){
+    let d=[];
+    for(let i=0;i<2;i++){d.push(digit());container.appendChild(d[i]);}
+    container.appendChild(colon());
+    for(let i=2;i<4;i++){d.push(digit());container.appendChild(d[i]);}
+    container.appendChild(colon());
+    for(let i=4;i<6;i++){d.push(digit());container.appendChild(d[i]);}
+    return d;
+}
+
+const timerD = buildDisplay(timerDisplay);
+const swD = buildDisplay(swDisplay);
+const clockD = buildDisplay(clockDisplay);
+
+function render(d,time){
+    let h=Math.floor(time/3600);
+    let m=Math.floor((time%3600)/60);
+    let s=time%60;
+    let str=(h+"").padStart(2,"0")+(m+"").padStart(2,"0")+(s+"").padStart(2,"0");
+    for(let i=0;i<6;i++) set(d[i],+str[i]);
+}
+
+/* 탭 */
+function switchTab(i){
+    document.querySelectorAll(".tab").forEach((t,idx)=>{
+        t.classList.toggle("active", idx===i);
+    });
+    document.querySelectorAll(".screen").forEach((s,idx)=>{
+        s.classList.toggle("active", idx===i);
+    });
+}
+
+/* 타이머 */
+let t=0, timer=null;
+
+function startTimer(){
+    if(timer !== null) return;
+
+    let h=safeNum(t_h.value,0,99);
+    let m=safeNum(t_m.value,0,59);
+    let s=safeNum(t_s.value,0,59);
+
+    if(t===0){
+        t = h*3600 + m*60 + s;
+        if(t===0){ showMsg("시간 입력 필요"); return; }
+    }
+
+    showMsg("");
+
+    timer = setInterval(()=>{
+        if(t<=0){
+            clearInterval(timer);
+            timer=null;
+            showMsg("타이머 종료");
+            return;
+        }
+        t--;
+        render(timerD,t);
+    },1000);
+}
+
+function stopTimer(){
+    clearInterval(timer);
+    timer=null;
+}
+
+function resetTimer(){
+    clearInterval(timer);
+    timer=null;
+    t=0;
+    render(timerD,0);
+    showMsg("");
+}
+
+/* 스톱워치 */
+let sw=0, swTimer=null;
+
+function startSW(){
+    if(swTimer !== null) return;
+
+    swTimer = setInterval(()=>{
+        sw++;
+        render(swD,sw);
+    },1000);
+}
+
+function stopSW(){
+    clearInterval(swTimer);
+    swTimer=null;
+}
+
+function resetSW(){
+    clearInterval(swTimer);
+    swTimer=null;
+    sw=0;
+    render(swD,0);
+}
+
+/* 현재시간 */
+setInterval(()=>{
+    let now = new Date(new Date().toLocaleString("en-US",{timeZone:"Asia/Seoul"}));
+
+    let t = now.getHours()*3600 + now.getMinutes()*60 + now.getSeconds();
+    render(clockD,t);
+
+    document.getElementById("ms").textContent =
+        String(now.getMilliseconds()).padStart(3,"0");
+
+},30);
+
+/* 초기 */
+render(timerD,0);
+render(swD,0);
+</script>
+
+</body>
+</html>
